@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Chess } from 'chess.js'
 import type { Square as ChessSquare } from 'chess.js'
 import { Chessboard } from 'react-chessboard'
+import PromotionWindow from './PromotionWindow'
 
 const PIECE_MAP: Record<string, string> = {
   wP: 'white pawn', wN: 'white knight', wB: 'white bishop',
@@ -30,6 +31,7 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
   const [position, setPosition] = useState(chess.fen())
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({})
+  const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null)
 
   function getMoveOptions(square: string) {
     const moves = chess.moves({ square: square as ChessSquare, verbose: true })
@@ -46,21 +48,30 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
     setOptionSquares(styles)
   }
 
-  function tryMove(from: string, to: string) {
+  function tryMove(from: string, to: string, promotion?: string) {
     try {
-      const result = chess.move({ from, to })
+      const result = chess.move({ from, to, promotion })
       if (result) setPosition(chess.fen())
     } catch {
-      // illegal move, deselect
+      // illegal move
     }
     setSelectedSquare(null)
     setOptionSquares({})
+    setPendingPromotion(null)
+  }
+
+  function isPromotionMove(from: string, to: string) {
+    const piece = chess.get(from as ChessSquare)
+    if (piece?.type !== 'p') return false
+    const targetRank = to.charAt(1)
+    return (piece.color === 'w' && targetRank === '8') || (piece.color === 'b' && targetRank === '1')
   }
 
   function onSquareClick({ square }: { square: string }) {
     if (!isActive) return
     const piece = chess.get(square as ChessSquare)
 
+    // If no square is selected, select the clicked square if the piece is the correct color
     if (!selectedSquare) {
       if (piece?.color === chess.turn()) {
         setSelectedSquare(square)
@@ -69,15 +80,22 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
       return
     }
 
+    // If the clicked square is the same as the selected square, deselect the square
     if (selectedSquare === square) {
       setSelectedSquare(null)
       setOptionSquares({})
       return
     }
 
+    // If the user clicks another piece, select the square and get the move options
     if (piece?.color === chess.turn()) {
       setSelectedSquare(square)
       getMoveOptions(square)
+      return
+    }
+
+    if (isPromotionMove(selectedSquare, square)) {
+      setPendingPromotion({ from: selectedSquare, to: square })
       return
     }
 
@@ -86,6 +104,10 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
 
   function onPieceDrop({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) {
     if (!targetSquare) return false
+    if (isPromotionMove(sourceSquare, targetSquare)) {
+      setPendingPromotion({ from: sourceSquare, to: targetSquare })
+      return true
+    }
     tryMove(sourceSquare, targetSquare)
     return true
   }
@@ -141,6 +163,14 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
           </div>
         ))}
       </div>
+
+      {pendingPromotion && (
+        <PromotionWindow
+          color={chess.turn() as 'w' | 'b'}
+          onSelect={piece => tryMove(pendingPromotion.from, pendingPromotion.to, piece)}
+          onClose={() => setPendingPromotion(null)}
+        />
+      )}
     </div>
   )
 }
