@@ -1,34 +1,95 @@
-type Color = 'white' | 'black'
-type PieceType = 'king' | 'queen' | 'rook' | 'bishop' | 'knight' | 'pawn'
+import { useState } from 'react'
+import { Chess } from 'chess.js'
+import type { Square as ChessSquare } from 'chess.js'
+import { Chessboard } from 'react-chessboard'
 
-interface Piece {
-  color: Color
-  type: PieceType
+const PIECE_MAP: Record<string, string> = {
+  wP: 'white pawn', wN: 'white knight', wB: 'white bishop',
+  wR: 'white rook',  wQ: 'white queen',  wK: 'white king',
+  bP: 'black pawn', bN: 'black knight', bB: 'black bishop',
+  bR: 'black rook',  bQ: 'black queen',  bK: 'black king',
 }
 
-type Square = Piece | null
-type BoardState = Square[][]
+const BOARD_SIZE = 512
+const SQUARE_SIZE = BOARD_SIZE / 8
+
+const customPieces = Object.fromEntries(
+  Object.entries(PIECE_MAP).map(([code, name]) => [
+    code,
+    () => (
+      <img src={`/pieces/${name}.svg`} style={{ width: SQUARE_SIZE, height: SQUARE_SIZE }} draggable={false} />
+    ),
+  ])
+)
 
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1']
-const BACK_RANK: PieceType[] = ['rook', 'knight', 'bishop', 'queen', 'king', 'bishop', 'knight', 'rook']
-
-function createInitialBoard(): BoardState {
-  const board: BoardState = Array.from({ length: 8 }, () => Array(8).fill(null))
-
-  BACK_RANK.forEach((type, col) => {
-    board[0][col] = { color: 'black', type }
-    board[1][col] = { color: 'black', type: 'pawn' }
-    board[6][col] = { color: 'white', type: 'pawn' }
-    board[7][col] = { color: 'white', type }
-  })
-
-  return board
-}
-
-const INITIAL_BOARD = createInitialBoard()
 
 export function Board({ isActive, startGameVsHuman }: { isActive: boolean, startGameVsHuman: () => void }) {
+  const [chess] = useState(() => new Chess())
+  const [position, setPosition] = useState(chess.fen())
+  const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
+  const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({})
+
+  function getMoveOptions(square: string) {
+    const moves = chess.moves({ square: square as ChessSquare, verbose: true })
+    if (!moves.length) { setOptionSquares({}); return }
+    const styles: Record<string, React.CSSProperties> = {}
+    moves.forEach(m => {
+      styles[m.to] = {
+        background: chess.get(m.to as ChessSquare)
+          ? 'radial-gradient(circle, rgba(0,0,0,.2) 60%, transparent 65%)'
+          : 'radial-gradient(circle, rgba(0,0,0,.2) 25%, transparent 30%)',
+      }
+    })
+    styles[square] = { background: 'rgba(255,255,0,0.4)' }
+    setOptionSquares(styles)
+  }
+
+  function tryMove(from: string, to: string) {
+    try {
+      const result = chess.move({ from, to })
+      if (result) setPosition(chess.fen())
+    } catch {
+      // illegal move, deselect
+    }
+    setSelectedSquare(null)
+    setOptionSquares({})
+  }
+
+  function onSquareClick({ square }: { square: string }) {
+    if (!isActive) return
+    const piece = chess.get(square as ChessSquare)
+
+    if (!selectedSquare) {
+      if (piece?.color === chess.turn()) {
+        setSelectedSquare(square)
+        getMoveOptions(square)
+      }
+      return
+    }
+
+    if (selectedSquare === square) {
+      setSelectedSquare(null)
+      setOptionSquares({})
+      return
+    }
+
+    if (piece?.color === chess.turn()) {
+      setSelectedSquare(square)
+      getMoveOptions(square)
+      return
+    }
+
+    tryMove(selectedSquare, square)
+  }
+
+  function onPieceDrop({ sourceSquare, targetSquare }: { sourceSquare: string; targetSquare: string | null }) {
+    if (!targetSquare) return false
+    tryMove(sourceSquare, targetSquare)
+    return true
+  }
+
   return (
     <div className="inline-grid grid-cols-[auto_1fr] grid-rows-[1fr_auto] gap-1">
       {!isActive && (
@@ -43,42 +104,30 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
           </div>
         </div>
       )}
+
       {/* Rank labels */}
       <div className="flex flex-col">
         {RANKS.map(rank => (
-          <div key={rank} className="w-5 h-16 flex items-center justify-center text-sm text-gray-500 font-medium select-none">
+          <div key={rank} className="w-5 flex items-center justify-center text-sm text-gray-500 font-medium select-none" style={{ height: SQUARE_SIZE }}>
             {rank}
           </div>
         ))}
       </div>
 
-      {/* Board squares */}
-      <div className="border border-gray-700">
-        {RANKS.map((rank, row) => (
-          <div key={rank} className="flex">
-            {FILES.map((file, col) => {
-              const isLight = (row + col) % 2 === 0
-              const piece = INITIAL_BOARD[row][col]
-              return (
-                <div
-                  key={file}
-                  className={`w-16 h-16 flex items-center justify-center ${
-                    isLight ? 'bg-[#f0d9b5]' : 'bg-[#b58863]'
-                  }`}
-                >
-                  {piece && (
-                    <img
-                      src={`/pieces/${piece.color} ${piece.type}.svg`}
-                      alt={`${piece.color} ${piece.type}`}
-                      className="w-12 h-12 select-none"
-                      draggable={false}
-                    />
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        ))}
+      {/* Board */}
+      <div style={{ width: BOARD_SIZE }}>
+        <Chessboard
+          options={{
+            position,
+            onSquareClick,
+            onPieceDrop,
+            pieces: customPieces,
+            squareStyles: optionSquares,
+            boardStyle: { width: BOARD_SIZE, height: BOARD_SIZE },
+            darkSquareStyle: { backgroundColor: '#b58863' },
+            lightSquareStyle: { backgroundColor: '#f0d9b5' },
+          }}
+        />
       </div>
 
       {/* Corner spacer */}
@@ -87,7 +136,7 @@ export function Board({ isActive, startGameVsHuman }: { isActive: boolean, start
       {/* File labels */}
       <div className="flex">
         {FILES.map(file => (
-          <div key={file} className="w-16 h-5 flex items-center justify-center text-sm text-gray-500 font-medium select-none">
+          <div key={file} className="flex items-center justify-center text-sm text-gray-500 font-medium select-none" style={{ width: SQUARE_SIZE, height: 20 }}>
             {file}
           </div>
         ))}
