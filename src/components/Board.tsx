@@ -26,9 +26,8 @@ const customPieces = Object.fromEntries(
 const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
 const RANKS = ['8', '7', '6', '5', '4', '3', '2', '1']
 
-export function Board({ isActive, startGameVsHuman }: { isActive: boolean, startGameVsHuman: () => void }) {
-  const [chess] = useState(() => new Chess())
-  const [position, setPosition] = useState(chess.fen())
+export function Board({ isActive, startGameVsHuman, chess, position, setPosition }:
+  { isActive: boolean, startGameVsHuman: () => void, chess: Chess, position: string, setPosition: (position: string) => void }) {
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null)
   const [optionSquares, setOptionSquares] = useState<Record<string, React.CSSProperties>>({})
   const [pendingPromotion, setPendingPromotion] = useState<{ from: string; to: string } | null>(null)
